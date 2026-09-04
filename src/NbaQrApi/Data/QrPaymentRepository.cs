@@ -1,5 +1,8 @@
-using Microsoft.Data.SqlClient;
+using System.Data;
+using System.Data.Common;
 using NbaQrApi.Domain;
+using Oracle.ManagedDataAccess.Client;
+using static NbaQrApi.Data.DataReaderValues;
 
 namespace NbaQrApi.Data;
 
@@ -13,82 +16,63 @@ public interface IQrPaymentRepository
 
 public sealed class QrPaymentRepository : IQrPaymentRepository
 {
-    private readonly ISqlConnectionFactory _connections;
+    private readonly IOracleConnectionFactory _connections;
 
-    public QrPaymentRepository(ISqlConnectionFactory connections)
+    public QrPaymentRepository(IOracleConnectionFactory connections)
     {
         _connections = connections;
     }
 
     public async Task<bool> UniqueIdExistsAsync(string uniqueId, CancellationToken cancellationToken)
     {
-        const string sql = "SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.QrPayments WHERE UniqueId = @UniqueId) THEN 1 ELSE 0 END";
         await using var connection = _connections.Create();
         await connection.OpenAsync(cancellationToken);
-        await using var command = new SqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@UniqueId", uniqueId);
-        var result = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt32(result) == 1;
+        await using var command = _connections.CreateCommand("UNIQUE_ID_EXISTS", connection);
+
+        AddInput(command, "P_UNIQUE_ID", OracleDbType.Varchar2, uniqueId);
+        var exists = AddOutput(command, "P_EXISTS", OracleDbType.Decimal);
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return GetInt32Output(exists) == 1;
     }
 
     public async Task<long> InsertAsync(QrPayment payment, CancellationToken cancellationToken)
     {
-        const string sql = """
-            INSERT INTO dbo.QrPayments
-            (
-                UniqueId, EndToEndId, SerialNumber, PaymentType, TotalAmount, QrCodeStr,
-                StatusCode, StatusDesc, MerchantNo, TerminalNo, CurrencyCode,
-                RefundedPaymentId, RefundedUniqueId, RefundedEndToEndId, IpsStatus, IsCanceled, Description
-            )
-            OUTPUT INSERTED.Id
-            VALUES
-            (
-                @UniqueId, @EndToEndId, @SerialNumber, @PaymentType, @TotalAmount, @QrCodeStr,
-                @StatusCode, @StatusDesc, @MerchantNo, @TerminalNo, @CurrencyCode,
-                @RefundedPaymentId, @RefundedUniqueId, @RefundedEndToEndId, @IpsStatus, @IsCanceled, @Description
-            )
-            """;
-
         await using var connection = _connections.Create();
         await connection.OpenAsync(cancellationToken);
-        await using var command = new SqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@UniqueId", payment.UniqueId);
-        command.Parameters.AddWithValue("@EndToEndId", payment.EndToEndId);
-        command.Parameters.AddWithValue("@SerialNumber", payment.SerialNumber);
-        command.Parameters.AddWithValue("@PaymentType", payment.PaymentType);
-        command.Parameters.AddWithValue("@TotalAmount", payment.TotalAmount);
-        command.Parameters.AddWithValue("@QrCodeStr", payment.QrCodeStr);
-        command.Parameters.AddWithValue("@StatusCode", payment.StatusCode);
-        command.Parameters.AddWithValue("@StatusDesc", payment.StatusDesc);
-        command.Parameters.AddWithValue("@MerchantNo", payment.MerchantNo);
-        command.Parameters.AddWithValue("@TerminalNo", payment.TerminalNo);
-        command.Parameters.AddWithValue("@CurrencyCode", payment.CurrencyCode);
-        command.Parameters.AddWithValue("@RefundedPaymentId", (object?)payment.RefundedPaymentId ?? DBNull.Value);
-        command.Parameters.AddWithValue("@RefundedUniqueId", (object?)payment.RefundedUniqueId ?? DBNull.Value);
-        command.Parameters.AddWithValue("@RefundedEndToEndId", (object?)payment.RefundedEndToEndId ?? DBNull.Value);
-        command.Parameters.AddWithValue("@IpsStatus", (object?)payment.IpsStatus ?? DBNull.Value);
-        command.Parameters.AddWithValue("@IsCanceled", payment.IsCanceled);
-        command.Parameters.AddWithValue("@Description", (object?)payment.Description ?? DBNull.Value);
+        await using var command = _connections.CreateCommand("INSERT_QR_PAYMENT", connection);
 
-        var id = await command.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt64(id);
+        AddInput(command, "P_UNIQUE_ID", OracleDbType.Varchar2, payment.UniqueId);
+        AddInput(command, "P_END_TO_END_ID", OracleDbType.Varchar2, payment.EndToEndId);
+        AddInput(command, "P_SERIAL_NUMBER", OracleDbType.Varchar2, payment.SerialNumber);
+        AddInput(command, "P_PAYMENT_TYPE", OracleDbType.Int32, payment.PaymentType);
+        AddInput(command, "P_TOTAL_AMOUNT", OracleDbType.Decimal, payment.TotalAmount);
+        AddInput(command, "P_QR_CODE_STR", OracleDbType.Clob, payment.QrCodeStr);
+        AddInput(command, "P_STATUS_CODE", OracleDbType.Int32, payment.StatusCode);
+        AddInput(command, "P_STATUS_DESC", OracleDbType.Varchar2, payment.StatusDesc);
+        AddInput(command, "P_MERCHANT_NO", OracleDbType.Varchar2, payment.MerchantNo);
+        AddInput(command, "P_TERMINAL_NO", OracleDbType.Varchar2, payment.TerminalNo);
+        AddInput(command, "P_CURRENCY_CODE", OracleDbType.Char, payment.CurrencyCode);
+        AddInput(command, "P_REFUNDED_PAYMENT_ID", OracleDbType.Int64, payment.RefundedPaymentId);
+        AddInput(command, "P_REFUNDED_UNIQUE_ID", OracleDbType.Varchar2, payment.RefundedUniqueId);
+        AddInput(command, "P_REFUNDED_END_TO_END_ID", OracleDbType.Varchar2, payment.RefundedEndToEndId);
+        AddInput(command, "P_IPS_STATUS", OracleDbType.Varchar2, payment.IpsStatus);
+        AddInput(command, "P_IS_CANCELED", OracleDbType.Int16, payment.IsCanceled ? 1 : 0);
+        AddInput(command, "P_DESCRIPTION", OracleDbType.Varchar2, payment.Description);
+        var id = AddOutput(command, "P_ID", OracleDbType.Decimal);
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return GetInt64Output(id);
     }
 
     public async Task<QrPayment?> GetByUniqueIdAsync(string uniqueId, CancellationToken cancellationToken)
     {
-        const string sql = """
-            SELECT TOP (1)
-                Id, UniqueId, EndToEndId, SerialNumber, PaymentType, TotalAmount, QrCodeStr,
-                StatusCode, StatusDesc, MerchantNo, TerminalNo, CurrencyCode,
-                RefundedPaymentId, RefundedUniqueId, RefundedEndToEndId, IpsStatus, IsCanceled, Description
-            FROM dbo.QrPayments
-            WHERE UniqueId = @UniqueId
-            """;
-
         await using var connection = _connections.Create();
         await connection.OpenAsync(cancellationToken);
-        await using var command = new SqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@UniqueId", uniqueId);
+        await using var command = _connections.CreateCommand("GET_QR_PAYMENT_BY_UNIQUE_ID", connection);
+
+        AddInput(command, "P_UNIQUE_ID", OracleDbType.Varchar2, uniqueId);
+        AddOutput(command, "P_RESULT", OracleDbType.RefCursor);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -96,27 +80,7 @@ public sealed class QrPaymentRepository : IQrPaymentRepository
             return null;
         }
 
-        return new QrPayment
-        {
-            Id = reader.GetInt64(reader.GetOrdinal("Id")),
-            UniqueId = reader.GetString(reader.GetOrdinal("UniqueId")),
-            EndToEndId = reader.GetString(reader.GetOrdinal("EndToEndId")),
-            SerialNumber = reader.GetString(reader.GetOrdinal("SerialNumber")),
-            PaymentType = reader.GetInt32(reader.GetOrdinal("PaymentType")),
-            TotalAmount = reader.GetDecimal(reader.GetOrdinal("TotalAmount")),
-            QrCodeStr = reader.GetString(reader.GetOrdinal("QrCodeStr")),
-            StatusCode = reader.GetInt32(reader.GetOrdinal("StatusCode")),
-            StatusDesc = reader.GetString(reader.GetOrdinal("StatusDesc")),
-            MerchantNo = reader.GetString(reader.GetOrdinal("MerchantNo")),
-            TerminalNo = reader.GetString(reader.GetOrdinal("TerminalNo")),
-            CurrencyCode = reader.GetString(reader.GetOrdinal("CurrencyCode")).Trim(),
-            RefundedPaymentId = reader.IsDBNull(reader.GetOrdinal("RefundedPaymentId")) ? null : reader.GetInt64(reader.GetOrdinal("RefundedPaymentId")),
-            RefundedUniqueId = reader.IsDBNull(reader.GetOrdinal("RefundedUniqueId")) ? null : reader.GetString(reader.GetOrdinal("RefundedUniqueId")),
-            RefundedEndToEndId = reader.IsDBNull(reader.GetOrdinal("RefundedEndToEndId")) ? null : reader.GetString(reader.GetOrdinal("RefundedEndToEndId")),
-            IpsStatus = reader.IsDBNull(reader.GetOrdinal("IpsStatus")) ? null : reader.GetString(reader.GetOrdinal("IpsStatus")),
-            IsCanceled = reader.GetBoolean(reader.GetOrdinal("IsCanceled")),
-            Description = reader.IsDBNull(reader.GetOrdinal("Description")) ? null : reader.GetString(reader.GetOrdinal("Description"))
-        };
+        return Map(reader);
     }
 
     public async Task UpdateStatusAsync(
@@ -128,26 +92,54 @@ public sealed class QrPaymentRepository : IQrPaymentRepository
         string? description,
         CancellationToken cancellationToken)
     {
-        const string sql = """
-            UPDATE dbo.QrPayments
-            SET StatusCode = @StatusCode,
-                StatusDesc = @StatusDesc,
-                IsCanceled = @IsCanceled,
-                IpsStatus = @IpsStatus,
-                Description = @Description,
-                UpdatedAtUtc = SYSUTCDATETIME()
-            WHERE UniqueId = @UniqueId
-            """;
-
         await using var connection = _connections.Create();
         await connection.OpenAsync(cancellationToken);
-        await using var command = new SqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@UniqueId", uniqueId);
-        command.Parameters.AddWithValue("@StatusCode", statusCode);
-        command.Parameters.AddWithValue("@StatusDesc", statusDesc);
-        command.Parameters.AddWithValue("@IsCanceled", isCanceled);
-        command.Parameters.AddWithValue("@IpsStatus", (object?)ipsStatus ?? DBNull.Value);
-        command.Parameters.AddWithValue("@Description", (object?)description ?? DBNull.Value);
+        await using var command = _connections.CreateCommand("UPDATE_QR_PAYMENT_STATUS", connection);
+
+        AddInput(command, "P_UNIQUE_ID", OracleDbType.Varchar2, uniqueId);
+        AddInput(command, "P_STATUS_CODE", OracleDbType.Int32, statusCode);
+        AddInput(command, "P_STATUS_DESC", OracleDbType.Varchar2, statusDesc);
+        AddInput(command, "P_IS_CANCELED", OracleDbType.Int16, isCanceled ? 1 : 0);
+        AddInput(command, "P_IPS_STATUS", OracleDbType.Varchar2, ipsStatus);
+        AddInput(command, "P_DESCRIPTION", OracleDbType.Varchar2, description);
+
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static QrPayment Map(DbDataReader reader)
+        => new()
+        {
+            Id = GetInt64(reader, "Id"),
+            UniqueId = GetString(reader, "UniqueId"),
+            EndToEndId = GetString(reader, "EndToEndId"),
+            SerialNumber = GetString(reader, "SerialNumber"),
+            PaymentType = GetInt32(reader, "PaymentType"),
+            TotalAmount = GetDecimal(reader, "TotalAmount"),
+            QrCodeStr = GetString(reader, "QrCodeStr"),
+            StatusCode = GetInt32(reader, "StatusCode"),
+            StatusDesc = GetString(reader, "StatusDesc"),
+            MerchantNo = GetString(reader, "MerchantNo"),
+            TerminalNo = GetString(reader, "TerminalNo"),
+            CurrencyCode = GetString(reader, "CurrencyCode").Trim(),
+            RefundedPaymentId = GetInt64OrNull(reader, "RefundedPaymentId"),
+            RefundedUniqueId = GetStringOrNull(reader, "RefundedUniqueId"),
+            RefundedEndToEndId = GetStringOrNull(reader, "RefundedEndToEndId"),
+            IpsStatus = GetStringOrNull(reader, "IpsStatus"),
+            IsCanceled = GetBoolean(reader, "IsCanceled"),
+            Description = GetStringOrNull(reader, "Description")
+        };
+
+    private static void AddInput(OracleCommand command, string name, OracleDbType type, object? value)
+    {
+        var parameter = command.Parameters.Add(name, type);
+        parameter.Direction = ParameterDirection.Input;
+        parameter.Value = value ?? DBNull.Value;
+    }
+
+    private static OracleParameter AddOutput(OracleCommand command, string name, OracleDbType type)
+    {
+        var parameter = command.Parameters.Add(name, type);
+        parameter.Direction = ParameterDirection.Output;
+        return parameter;
     }
 }

@@ -1,5 +1,8 @@
-using Microsoft.Data.SqlClient;
+using System.Data;
+using System.Data.Common;
 using NbaQrApi.Domain;
+using Oracle.ManagedDataAccess.Client;
+using static NbaQrApi.Data.DataReaderValues;
 
 namespace NbaQrApi.Data;
 
@@ -10,35 +13,21 @@ public interface ITerminalRepository
 
 public sealed class TerminalRepository : ITerminalRepository
 {
-    private readonly ISqlConnectionFactory _connections;
+    private readonly IOracleConnectionFactory _connections;
 
-    public TerminalRepository(ISqlConnectionFactory connections)
+    public TerminalRepository(IOracleConnectionFactory connections)
     {
         _connections = connections;
     }
 
     public async Task<Terminal?> GetBySerialNumberAsync(string serialNumber, CancellationToken cancellationToken)
     {
-        const string sql = """
-            SELECT TOP (1)
-                Id, SerialNumber, TerminalNo, TerminalModel, TerminalType,
-                CountryCode, HeaderCountryCode, CurrencyCode, CurrencyNumericCode,
-                TerminalLanguageCode, ReceiptLanguageCode, TimeZone, RrnPrefix,
-                CompanyId, CompanyCode, CompanyName, MerchantId, RegisterId, RegisterTsmId,
-                MerchantName, MerchantAddress1, PhoneNumber, CategoryCode, MerchantNo, Email,
-                TaxNumber, City, PostalCode, BranchName,
-                AliasType, AliasValue, BankBic, ProviderBic, OperationCode, TransactionType,
-                IpsSpecVersion, IpsUuid, DeliveryChannel, Coordinates, ConsumerInfoQuery,
-                TipFeeType, FixedConvenienceFee, ConvenienceFeePercent,
-                AltLanguageCode, AltMerchantName, AltCity, IsActive
-            FROM dbo.Terminals
-            WHERE SerialNumber = @SerialNumber AND IsActive = 1
-            """;
-
         await using var connection = _connections.Create();
         await connection.OpenAsync(cancellationToken);
-        await using var command = new SqlCommand(sql, connection);
-        command.Parameters.AddWithValue("@SerialNumber", serialNumber);
+        await using var command = _connections.CreateCommand("GET_TERMINAL_BY_SERIAL", connection);
+
+        AddInput(command, "P_SERIAL_NUMBER", OracleDbType.Varchar2, serialNumber);
+        AddOutput(command, "P_RESULT", OracleDbType.RefCursor);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -49,46 +38,46 @@ public sealed class TerminalRepository : ITerminalRepository
         return Map(reader);
     }
 
-    private static Terminal Map(SqlDataReader reader) => new()
+    private static Terminal Map(DbDataReader reader) => new()
     {
-        Id = reader.GetInt32(reader.GetOrdinal("Id")),
-        SerialNumber = reader.GetString(reader.GetOrdinal("SerialNumber")),
-        TerminalNo = reader.GetString(reader.GetOrdinal("TerminalNo")),
+        Id = GetInt32(reader, "Id"),
+        SerialNumber = GetString(reader, "SerialNumber"),
+        TerminalNo = GetString(reader, "TerminalNo"),
         TerminalModel = GetStringOrNull(reader, "TerminalModel"),
-        TerminalType = reader.GetString(reader.GetOrdinal("TerminalType")).Trim(),
-        CountryCode = reader.GetString(reader.GetOrdinal("CountryCode")).Trim(),
-        HeaderCountryCode = reader.GetString(reader.GetOrdinal("HeaderCountryCode")),
-        CurrencyCode = reader.GetString(reader.GetOrdinal("CurrencyCode")).Trim(),
-        CurrencyNumericCode = reader.GetString(reader.GetOrdinal("CurrencyNumericCode")).Trim(),
-        TerminalLanguageCode = reader.GetString(reader.GetOrdinal("TerminalLanguageCode")),
-        ReceiptLanguageCode = reader.GetString(reader.GetOrdinal("ReceiptLanguageCode")),
-        TimeZone = reader.GetString(reader.GetOrdinal("TimeZone")),
-        RrnPrefix = reader.GetString(reader.GetOrdinal("RrnPrefix")),
-        CompanyId = GetIntOrNull(reader, "CompanyId"),
-        CompanyCode = reader.GetString(reader.GetOrdinal("CompanyCode")),
-        CompanyName = reader.GetString(reader.GetOrdinal("CompanyName")),
-        MerchantId = GetIntOrNull(reader, "MerchantId"),
-        RegisterId = GetIntOrNull(reader, "RegisterId"),
+        TerminalType = GetString(reader, "TerminalType").Trim(),
+        CountryCode = GetString(reader, "CountryCode").Trim(),
+        HeaderCountryCode = GetString(reader, "HeaderCountryCode"),
+        CurrencyCode = GetString(reader, "CurrencyCode").Trim(),
+        CurrencyNumericCode = GetString(reader, "CurrencyNumericCode").Trim(),
+        TerminalLanguageCode = GetString(reader, "TerminalLanguageCode"),
+        ReceiptLanguageCode = GetString(reader, "ReceiptLanguageCode"),
+        TimeZone = GetString(reader, "TimeZone"),
+        RrnPrefix = GetString(reader, "RrnPrefix"),
+        CompanyId = GetInt32OrNull(reader, "CompanyId"),
+        CompanyCode = GetString(reader, "CompanyCode"),
+        CompanyName = GetString(reader, "CompanyName"),
+        MerchantId = GetInt32OrNull(reader, "MerchantId"),
+        RegisterId = GetInt32OrNull(reader, "RegisterId"),
         RegisterTsmId = GetGuidOrNull(reader, "RegisterTsmId"),
-        MerchantName = reader.GetString(reader.GetOrdinal("MerchantName")),
+        MerchantName = GetString(reader, "MerchantName"),
         MerchantAddress1 = GetStringOrNull(reader, "MerchantAddress1"),
         PhoneNumber = GetStringOrNull(reader, "PhoneNumber"),
-        CategoryCode = reader.GetString(reader.GetOrdinal("CategoryCode")).Trim(),
-        MerchantNo = reader.GetString(reader.GetOrdinal("MerchantNo")),
+        CategoryCode = GetString(reader, "CategoryCode").Trim(),
+        MerchantNo = GetString(reader, "MerchantNo"),
         Email = GetStringOrNull(reader, "Email"),
         TaxNumber = GetStringOrNull(reader, "TaxNumber"),
-        City = reader.GetString(reader.GetOrdinal("City")),
+        City = GetString(reader, "City"),
         PostalCode = GetStringOrNull(reader, "PostalCode"),
-        BranchName = reader.GetString(reader.GetOrdinal("BranchName")),
-        AliasType = reader.GetString(reader.GetOrdinal("AliasType")).Trim(),
-        AliasValue = reader.GetString(reader.GetOrdinal("AliasValue")),
+        BranchName = GetString(reader, "BranchName"),
+        AliasType = GetString(reader, "AliasType").Trim(),
+        AliasValue = GetString(reader, "AliasValue"),
         BankBic = GetStringOrNull(reader, "BankBic"),
-        ProviderBic = reader.GetString(reader.GetOrdinal("ProviderBic")),
-        OperationCode = reader.GetString(reader.GetOrdinal("OperationCode")),
-        TransactionType = reader.GetString(reader.GetOrdinal("TransactionType")).Trim(),
-        IpsSpecVersion = reader.GetString(reader.GetOrdinal("IpsSpecVersion")).Trim(),
-        IpsUuid = reader.GetString(reader.GetOrdinal("IpsUuid")).Trim(),
-        DeliveryChannel = reader.GetString(reader.GetOrdinal("DeliveryChannel")).Trim(),
+        ProviderBic = GetString(reader, "ProviderBic"),
+        OperationCode = GetString(reader, "OperationCode"),
+        TransactionType = GetString(reader, "TransactionType").Trim(),
+        IpsSpecVersion = GetString(reader, "IpsSpecVersion").Trim(),
+        IpsUuid = GetString(reader, "IpsUuid").Trim(),
+        DeliveryChannel = GetString(reader, "DeliveryChannel").Trim(),
         Coordinates = GetStringOrNull(reader, "Coordinates"),
         ConsumerInfoQuery = GetStringOrNull(reader, "ConsumerInfoQuery"),
         TipFeeType = GetStringOrNull(reader, "TipFeeType"),
@@ -97,24 +86,19 @@ public sealed class TerminalRepository : ITerminalRepository
         AltLanguageCode = GetStringOrNull(reader, "AltLanguageCode"),
         AltMerchantName = GetStringOrNull(reader, "AltMerchantName"),
         AltCity = GetStringOrNull(reader, "AltCity"),
-        IsActive = reader.GetBoolean(reader.GetOrdinal("IsActive"))
+        IsActive = GetBoolean(reader, "IsActive")
     };
 
-    private static string? GetStringOrNull(SqlDataReader reader, string column)
+    private static void AddInput(OracleCommand command, string name, OracleDbType type, object value)
     {
-        var i = reader.GetOrdinal(column);
-        return reader.IsDBNull(i) ? null : reader.GetString(i);
+        var parameter = command.Parameters.Add(name, type);
+        parameter.Direction = ParameterDirection.Input;
+        parameter.Value = value;
     }
 
-    private static int? GetIntOrNull(SqlDataReader reader, string column)
+    private static void AddOutput(OracleCommand command, string name, OracleDbType type)
     {
-        var i = reader.GetOrdinal(column);
-        return reader.IsDBNull(i) ? null : reader.GetInt32(i);
-    }
-
-    private static Guid? GetGuidOrNull(SqlDataReader reader, string column)
-    {
-        var i = reader.GetOrdinal(column);
-        return reader.IsDBNull(i) ? null : reader.GetGuid(i);
+        var parameter = command.Parameters.Add(name, type);
+        parameter.Direction = ParameterDirection.Output;
     }
 }

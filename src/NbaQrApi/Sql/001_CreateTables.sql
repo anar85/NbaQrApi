@@ -1,95 +1,136 @@
--- NBA AzQR terminal store. All QR and POS API fields are read from this table.
-IF OBJECT_ID(N'dbo.QrPayments', N'U') IS NOT NULL DROP TABLE dbo.QrPayments;
-IF OBJECT_ID(N'dbo.Terminals', N'U') IS NOT NULL DROP TABLE dbo.Terminals;
-GO
+-- Oracle 11g schema for NBA AzQR terminal and payment storage.
+BEGIN
+    EXECUTE IMMEDIATE 'DROP TABLE qr_payments CASCADE CONSTRAINTS';
+EXCEPTION
+    WHEN OTHERS THEN
+        IF SQLCODE != -942 THEN
+            RAISE;
+        END IF;
+END;
+/
 
-CREATE TABLE dbo.Terminals
+BEGIN
+    EXECUTE IMMEDIATE 'DROP TABLE terminals CASCADE CONSTRAINTS';
+EXCEPTION
+    WHEN OTHERS THEN
+        IF SQLCODE != -942 THEN
+            RAISE;
+        END IF;
+END;
+/
+
+BEGIN
+    EXECUTE IMMEDIATE 'DROP SEQUENCE qr_payments_seq';
+EXCEPTION
+    WHEN OTHERS THEN
+        IF SQLCODE != -2289 THEN
+            RAISE;
+        END IF;
+END;
+/
+
+BEGIN
+    EXECUTE IMMEDIATE 'DROP SEQUENCE terminals_seq';
+EXCEPTION
+    WHEN OTHERS THEN
+        IF SQLCODE != -2289 THEN
+            RAISE;
+        END IF;
+END;
+/
+
+CREATE TABLE terminals
 (
-    Id                      INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Terminals PRIMARY KEY,
-    SerialNumber            NVARCHAR(50)  NOT NULL,
-    TerminalNo              NVARCHAR(25)  NOT NULL,
-    TerminalModel           NVARCHAR(50)  NULL,
-    TerminalType            CHAR(2)       NOT NULL CONSTRAINT DF_Terminals_TerminalType DEFAULT ('02'), -- IPS 26-04
-    CountryCode             CHAR(2)       NOT NULL CONSTRAINT DF_Terminals_CountryCode DEFAULT ('AZ'), -- IPS 58 ISO 3166-1 alpha-2
-    HeaderCountryCode       NVARCHAR(3)   NOT NULL CONSTRAINT DF_Terminals_HeaderCountry DEFAULT ('AZE'),
-    CurrencyCode            CHAR(3)       NOT NULL CONSTRAINT DF_Terminals_Currency DEFAULT ('AZN'),
-    CurrencyNumericCode     CHAR(3)       NOT NULL CONSTRAINT DF_Terminals_CurrencyNum DEFAULT ('944'), -- IPS 53 ISO 4217
-    TerminalLanguageCode    NVARCHAR(5)   NOT NULL CONSTRAINT DF_Terminals_TermLang DEFAULT ('az'),
-    ReceiptLanguageCode     NVARCHAR(5)   NOT NULL CONSTRAINT DF_Terminals_RcptLang DEFAULT ('az'),
-    TimeZone                NVARCHAR(50)  NOT NULL CONSTRAINT DF_Terminals_Tz DEFAULT ('Asia/Baku'),
-    RrnPrefix               NVARCHAR(10)  NOT NULL,
+    id                      NUMBER(10)    NOT NULL,
+    serial_number           NVARCHAR2(50) NOT NULL,
+    terminal_no             NVARCHAR2(25) NOT NULL,
+    terminal_model          NVARCHAR2(50),
+    terminal_type           CHAR(2)       DEFAULT '02' NOT NULL,
+    country_code            CHAR(2)       DEFAULT 'AZ' NOT NULL,
+    header_country_code     NVARCHAR2(3)  DEFAULT 'AZE' NOT NULL,
+    currency_code           CHAR(3)       DEFAULT 'AZN' NOT NULL,
+    currency_numeric_code   CHAR(3)       DEFAULT '944' NOT NULL,
+    terminal_language_code  NVARCHAR2(5)  DEFAULT 'az' NOT NULL,
+    receipt_language_code   NVARCHAR2(5)  DEFAULT 'az' NOT NULL,
+    time_zone               NVARCHAR2(50) DEFAULT 'Asia/Baku' NOT NULL,
+    rrn_prefix              NVARCHAR2(10) NOT NULL,
 
-    CompanyId               INT           NULL,
-    CompanyCode             NVARCHAR(20)  NOT NULL,
-    CompanyName             NVARCHAR(100) NOT NULL,
-    MerchantId              INT           NULL,
-    RegisterId              INT           NULL,
-    RegisterTsmId           UNIQUEIDENTIFIER NULL,
+    company_id              NUMBER(10),
+    company_code            NVARCHAR2(20)  NOT NULL,
+    company_name            NVARCHAR2(100) NOT NULL,
+    merchant_id             NUMBER(10),
+    register_id             NUMBER(10),
+    register_tsm_id         RAW(16),
 
-    MerchantName            NVARCHAR(25)  NOT NULL, -- IPS 59
-    MerchantAddress1        NVARCHAR(200) NULL,
-    PhoneNumber             NVARCHAR(30)  NULL,
-    CategoryCode            CHAR(4)       NOT NULL, -- IPS 52 MCC
-    MerchantNo              NVARCHAR(35)  NOT NULL, -- IPS 27-03 object identifier
-    Email                   NVARCHAR(100) NULL,
-    TaxNumber               NVARCHAR(10)  NULL,     -- IPS 62-10 TIN
-    City                    NVARCHAR(15)  NOT NULL, -- IPS 60
-    PostalCode              NVARCHAR(10)  NULL,     -- IPS 61
-    BranchName              NVARCHAR(25)  NOT NULL, -- IPS 62-03 mandatory when 62 present
+    merchant_name           NVARCHAR2(25)  NOT NULL,
+    merchant_address1       NVARCHAR2(200),
+    phone_number            NVARCHAR2(30),
+    category_code           CHAR(4)        NOT NULL,
+    merchant_no             NVARCHAR2(35)  NOT NULL,
+    email                   NVARCHAR2(100),
+    tax_number              NVARCHAR2(10),
+    city                    NVARCHAR2(15)  NOT NULL,
+    postal_code             NVARCHAR2(10),
+    branch_name             NVARCHAR2(25)  NOT NULL,
 
-    AliasType               CHAR(2)       NOT NULL CONSTRAINT DF_Terminals_AliasType DEFAULT ('04'), -- IPS 27-00
-    AliasValue              NVARCHAR(35)  NOT NULL, -- IPS 27-01 IBAN/TIN/mobile/...
-    BankBic                 NVARCHAR(11)  NULL,     -- IPS 27-02 required when alias is IBAN
-    ProviderBic             NVARCHAR(11)  NOT NULL, -- IPS 36-00
-    OperationCode           NVARCHAR(10)  NOT NULL CONSTRAINT DF_Terminals_OpCode DEFAULT ('MPRQ-ATP'), -- IPS 36-01
-    TransactionType         CHAR(3)       NOT NULL CONSTRAINT DF_Terminals_TxnType DEFAULT ('613'), -- IPS 36-02
-    IpsSpecVersion          CHAR(6)       NOT NULL CONSTRAINT DF_Terminals_IpsVer DEFAULT ('MPV002'), -- IPS 39
-    IpsUuid                 CHAR(32)      NOT NULL, -- IPS 40, hyphens stripped
-    DeliveryChannel         CHAR(3)       NOT NULL CONSTRAINT DF_Terminals_Delivery DEFAULT ('400'), -- IPS 62-11
-    Coordinates             CHAR(16)      NULL,     -- IPS 28 latitude+longitude digits
-    ConsumerInfoQuery       NVARCHAR(3)   NULL,     -- IPS 62-09 A/B/E
-    TipFeeType              CHAR(2)       NULL,     -- IPS 55
-    FixedConvenienceFee     NVARCHAR(13)  NULL,     -- IPS 56
-    ConvenienceFeePercent   NVARCHAR(5)   NULL,     -- IPS 57
-    AltLanguageCode         CHAR(2)       NULL,     -- IPS 64-00
-    AltMerchantName         NVARCHAR(25)  NULL,     -- IPS 64-01
-    AltCity                 NVARCHAR(15)  NULL,     -- IPS 64-02
+    alias_type              CHAR(2)        DEFAULT '04' NOT NULL,
+    alias_value             NVARCHAR2(35)  NOT NULL,
+    bank_bic                NVARCHAR2(11),
+    provider_bic            NVARCHAR2(11)  NOT NULL,
+    operation_code          NVARCHAR2(10)  DEFAULT 'MPRQ-ATP' NOT NULL,
+    transaction_type        CHAR(3)        DEFAULT '613' NOT NULL,
+    ips_spec_version        CHAR(6)        DEFAULT 'MPV002' NOT NULL,
+    ips_uuid                CHAR(32)       NOT NULL,
+    delivery_channel        CHAR(3)        DEFAULT '400' NOT NULL,
+    coordinates             CHAR(16),
+    consumer_info_query     NVARCHAR2(3),
+    tip_fee_type            CHAR(2),
+    fixed_convenience_fee   NVARCHAR2(13),
+    convenience_fee_percent NVARCHAR2(5),
+    alt_language_code       CHAR(2),
+    alt_merchant_name       NVARCHAR2(25),
+    alt_city                NVARCHAR2(15),
 
-    IsActive                BIT           NOT NULL CONSTRAINT DF_Terminals_IsActive DEFAULT (1),
-    CreatedAtUtc            DATETIME2(3)  NOT NULL CONSTRAINT DF_Terminals_Created DEFAULT (SYSUTCDATETIME()),
-    UpdatedAtUtc            DATETIME2(3)  NOT NULL CONSTRAINT DF_Terminals_Updated DEFAULT (SYSUTCDATETIME()),
+    is_active               NUMBER(1)      DEFAULT 1 NOT NULL,
+    created_at_utc          TIMESTAMP(3)   DEFAULT SYS_EXTRACT_UTC(SYSTIMESTAMP) NOT NULL,
+    updated_at_utc          TIMESTAMP(3)   DEFAULT SYS_EXTRACT_UTC(SYSTIMESTAMP) NOT NULL,
 
-    CONSTRAINT UQ_Terminals_SerialNumber UNIQUE (SerialNumber)
+    CONSTRAINT pk_terminals PRIMARY KEY (id),
+    CONSTRAINT uq_terminals_serial_number UNIQUE (serial_number),
+    CONSTRAINT ck_terminals_is_active CHECK (is_active IN (0, 1))
 );
-GO
 
-CREATE TABLE dbo.QrPayments
+CREATE TABLE qr_payments
 (
-    Id                      BIGINT IDENTITY(1,1) NOT NULL CONSTRAINT PK_QrPayments PRIMARY KEY,
-    UniqueId                NVARCHAR(32)  NOT NULL,
-    EndToEndId              NVARCHAR(32)  NOT NULL,
-    SerialNumber            NVARCHAR(50)  NOT NULL,
-    PaymentType             INT           NOT NULL,
-    TotalAmount             DECIMAL(13, 2) NOT NULL,
-    QrCodeStr               NVARCHAR(MAX) NOT NULL,
-    StatusCode              INT           NOT NULL,
-    StatusDesc              NVARCHAR(200) NOT NULL,
-    MerchantNo              NVARCHAR(35)  NOT NULL,
-    TerminalNo              NVARCHAR(25)  NOT NULL,
-    CurrencyCode            CHAR(3)       NOT NULL,
-    RefundedPaymentId       BIGINT        NULL,
-    RefundedUniqueId        NVARCHAR(32)  NULL,
-    RefundedEndToEndId      NVARCHAR(32)  NULL,
-    IpsStatus               NVARCHAR(50)  NULL,
-    IsCanceled              BIT           NOT NULL CONSTRAINT DF_QrPayments_IsCanceled DEFAULT (0),
-    Description             NVARCHAR(200) NULL,
-    CreatedAtUtc            DATETIME2(3)  NOT NULL CONSTRAINT DF_QrPayments_Created DEFAULT (SYSUTCDATETIME()),
-    UpdatedAtUtc            DATETIME2(3)  NOT NULL CONSTRAINT DF_QrPayments_Updated DEFAULT (SYSUTCDATETIME()),
+    id                      NUMBER(19)      NOT NULL,
+    unique_id               NVARCHAR2(32)   NOT NULL,
+    end_to_end_id           NVARCHAR2(32)   NOT NULL,
+    serial_number           NVARCHAR2(50)   NOT NULL,
+    payment_type            NUMBER(10)      NOT NULL,
+    total_amount            NUMBER(13, 2)   NOT NULL,
+    qr_code_str             CLOB            NOT NULL,
+    status_code             NUMBER(10)      NOT NULL,
+    status_desc             NVARCHAR2(200)  NOT NULL,
+    merchant_no             NVARCHAR2(35)   NOT NULL,
+    terminal_no             NVARCHAR2(25)   NOT NULL,
+    currency_code           CHAR(3)         NOT NULL,
+    refunded_payment_id     NUMBER(19),
+    refunded_unique_id      NVARCHAR2(32),
+    refunded_end_to_end_id  NVARCHAR2(32),
+    ips_status              NVARCHAR2(50),
+    is_canceled             NUMBER(1)       DEFAULT 0 NOT NULL,
+    description             NVARCHAR2(200),
+    created_at_utc          TIMESTAMP(3)    DEFAULT SYS_EXTRACT_UTC(SYSTIMESTAMP) NOT NULL,
+    updated_at_utc          TIMESTAMP(3)    DEFAULT SYS_EXTRACT_UTC(SYSTIMESTAMP) NOT NULL,
 
-    CONSTRAINT UQ_QrPayments_UniqueId UNIQUE (UniqueId),
-    CONSTRAINT FK_QrPayments_Terminals FOREIGN KEY (SerialNumber) REFERENCES dbo.Terminals (SerialNumber)
+    CONSTRAINT pk_qr_payments PRIMARY KEY (id),
+    CONSTRAINT uq_qr_payments_unique_id UNIQUE (unique_id),
+    CONSTRAINT fk_qr_payments_terminals FOREIGN KEY (serial_number) REFERENCES terminals (serial_number),
+    CONSTRAINT ck_qr_payments_is_canceled CHECK (is_canceled IN (0, 1))
 );
-GO
 
-CREATE INDEX IX_QrPayments_SerialNumber ON dbo.QrPayments (SerialNumber, CreatedAtUtc DESC);
-GO
+CREATE INDEX ix_qr_payments_serial ON qr_payments (serial_number, created_at_utc DESC);
+
+CREATE SEQUENCE terminals_seq START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
+
+CREATE SEQUENCE qr_payments_seq START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE;
