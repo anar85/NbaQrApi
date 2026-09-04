@@ -59,6 +59,7 @@ builder.Services.AddAuthorization();
 builder.Services.AddSingleton<IOracleConnectionFactory, OracleConnectionFactory>();
 builder.Services.AddScoped<ITerminalRepository, TerminalRepository>();
 builder.Services.AddScoped<IQrPaymentRepository, QrPaymentRepository>();
+builder.Services.AddScoped<ITerminalService, TerminalService>();
 builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IUniqueIdGenerator, UniqueIdGenerator>();
 builder.Services.AddScoped<IQrPaymentService, QrPaymentService>();

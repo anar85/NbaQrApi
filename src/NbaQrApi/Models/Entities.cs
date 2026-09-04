@@ -1,4 +1,4 @@
-namespace NbaQrApi.Domain;
+namespace NbaQrApi.Models;
 
 public sealed class Terminal
 {

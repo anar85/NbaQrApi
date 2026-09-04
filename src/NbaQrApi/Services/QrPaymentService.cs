@@ -1,6 +1,5 @@
 using NbaQrApi.AzQr;
 using NbaQrApi.Data;
-using NbaQrApi.Domain;
 using NbaQrApi.Models;
 
 namespace NbaQrApi.Services;
@@ -14,12 +13,12 @@ public interface IQrPaymentService
 
 public sealed class QrPaymentService : IQrPaymentService
 {
-    private readonly ITerminalRepository _terminals;
+    private readonly ITerminalService _terminals;
     private readonly IQrPaymentRepository _payments;
     private readonly IUniqueIdGenerator _uniqueIds;
 
     public QrPaymentService(
-        ITerminalRepository terminals,
+        ITerminalService terminals,
         IQrPaymentRepository payments,
         IUniqueIdGenerator uniqueIds)
     {

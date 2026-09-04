@@ -1,6 +1,6 @@
 using System.Data;
 using System.Data.Common;
-using NbaQrApi.Domain;
+using NbaQrApi.Models;
 using Oracle.ManagedDataAccess.Client;
 using static NbaQrApi.Data.DataReaderValues;
 

@@ -2,7 +2,6 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using NbaQrApi.AzQr;
-using NbaQrApi.Data;
 using NbaQrApi.Models;
 using NbaQrApi.Services;
 
@@ -12,11 +11,11 @@ namespace NbaQrApi.Controllers;
 [Route("qrapi")]
 public sealed class QrApiController : ControllerBase
 {
-    private readonly ITerminalRepository _terminals;
+    private readonly ITerminalService _terminals;
     private readonly ITokenService _tokens;
     private readonly IQrPaymentService _payments;
 
-    public QrApiController(ITerminalRepository terminals, ITokenService tokens, IQrPaymentService payments)
+    public QrApiController(ITerminalService terminals, ITokenService tokens, IQrPaymentService payments)
     {
         _terminals = terminals;
         _tokens = tokens;
@@ -144,7 +143,7 @@ public sealed class QrApiController : ControllerBase
     private string? TokenSerial()
         => User.FindFirstValue("serialNumber");
 
-    private async Task<Domain.Terminal?> LoadTerminalAsync(CancellationToken cancellationToken)
+    private async Task<Terminal?> LoadTerminalAsync(CancellationToken cancellationToken)
     {
         var serial = TokenSerial();
         if (string.IsNullOrWhiteSpace(serial))
