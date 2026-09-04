@@ -1,5 +1,6 @@
 using System.Data.Common;
 using System.Globalization;
+using Oracle.ManagedDataAccess.Client;
 using Oracle.ManagedDataAccess.Types;
 
 namespace NbaQrApi.Data;
