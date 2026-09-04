@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/NbaQrApi/NbaQrApi.csproj" />
+  <Project Path="tests/NbaQrApi.Tests/NbaQrApi.Tests.csproj" />
+</Solution>

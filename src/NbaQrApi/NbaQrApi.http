@@ -1,0 +1,29 @@
+@host = https://localhost:7250
+
+POST {{host}}/qrapi/authenticate
+Content-Type: application/json
+
+{
+  "serialNumber": "V1E0230675"
+}
+
+###
+@token = paste-access-token
+
+GET {{host}}/qrapi/header/info
+Authorization: Bearer {{token}}
+
+###
+POST {{host}}/qrapi/payment
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "serialNumber": "V1E0230675",
+  "paymentType": 1,
+  "totalAmount": 1.23
+}
+
+###
+GET {{host}}/qrapi/PaymentStatus/byid/{{uniqueId}}
+Authorization: Bearer {{token}}
